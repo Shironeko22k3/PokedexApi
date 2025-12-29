@@ -8,6 +8,7 @@ namespace PokedexApi.Services
     {
         Task<TeamResponseDto> CreateTeam(int userId, TeamDto teamDto);
         Task<TeamResponseDto> GetTeamById(int teamId, int userId);
+        Task<TeamResponseDto> GetTeamByIdAsync(int teamId);
         Task<List<TeamResponseDto>> GetAllTeams(int userId);
         Task<TeamResponseDto> UpdateTeam(int teamId, int userId, TeamDto teamDto);
         Task<bool> DeleteTeam(int teamId, int userId);

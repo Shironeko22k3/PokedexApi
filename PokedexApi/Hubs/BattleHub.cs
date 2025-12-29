@@ -1,8 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using PokedexApi.Services;
-using PokeDexApi.Models;
-using PokeDexApi.Services;
+using PokedexApi.Models;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -11,7 +10,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace PokeDexApi.Hubs
+namespace PokedexApi.Hubs
 {
     [Authorize]
     public class BattleHub : Hub

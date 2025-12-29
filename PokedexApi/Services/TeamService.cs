@@ -47,6 +47,19 @@ namespace PokedexApi.Services
             return MapToResponseDto(team);
         }
 
+        public async Task<TeamResponseDto> GetTeamByIdAsync(int teamId)
+        {
+            var team = await _context.Teams
+                .FirstOrDefaultAsync(t => t.Id == teamId);
+
+            if (team == null)
+            {
+                throw new Exception("Team not found");
+            }
+
+            return MapToResponseDto(team);
+        }
+
         public async Task<List<TeamResponseDto>> GetAllTeams(int userId)
         {
             var teams = await _context.Teams

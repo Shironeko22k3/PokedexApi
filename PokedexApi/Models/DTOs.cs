@@ -48,10 +48,10 @@ namespace PokedexApi.Models
     public class UpdateProfileDto
     {
         [StringLength(50, MinimumLength = 3)]
-        public string? Username { get; set; }
+        public string Username { get; set; }
 
         [EmailAddress]
-        public string? Email { get; set; }
+        public string Email { get; set; }
     }
 
     public class ChangePasswordDto

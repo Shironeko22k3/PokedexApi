@@ -1,33 +1,13 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using PokedexApi.Data;
-using PokedexApi.Services;
-using PokeDexApi.Data;
-using PokeDexApi.Models;
+using PokedexApi.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace PokeDexApi.Services
+namespace PokedexApi.Services
 {
-    public interface IBattleService
-    {
-        Task<List<BattleHistory>> GetUserBattlesAsync(int userId);
-        Task<BattleHistory> GetBattleByIdAsync(int id);
-        Task<BattleStats> GetUserStatsAsync(int userId);
-        Task<List<LeaderboardEntry>> GetLeaderboardAsync(int limit);
-        Task<BattleHistory> SaveBattleAsync(SaveBattleRequest request);
-        Task DeleteBattleAsync(int id);
-        Task ReportBattleAsync(int battleId, int reportedById, string reason);
-        Task<UserRating> GetOrCreateUserRatingAsync(int userId);
-        Task UpdateUserRatingAsync(int userId, bool won, int opponentRating);
-        Task<BattleSession> CreateBattleSessionAsync(int player1Id, string player1SocketId, int teamId);
-        Task<BattleSession> GetBattleSessionAsync(string battleId);
-        Task UpdateBattleSessionAsync(BattleSession session);
-        Task DeleteBattleSessionAsync(string battleId);
-        Task<List<BattleSession>> GetExpiredSessionsAsync(int minutesOld);
-    }
-
     public class BattleService : IBattleService
     {
         private readonly ApplicationDbContext _context;
@@ -72,9 +52,7 @@ namespace PokeDexApi.Services
 
             var totalTurns = battles.Sum(b => b.TotalTurns);
             var avgTurns = battles.Count > 0 ? (double)totalTurns / battles.Count : 0;
-
-            // Get most used Pokemon (simplified - would need more complex logic)
-            var favoritePokemon = "Pikachu"; // TODO: Implement favorite Pokemon logic
+            var favoritePokemon = "Pikachu";
 
             return new BattleStats
             {
@@ -119,9 +97,8 @@ namespace PokeDexApi.Services
 
         public async Task<BattleHistory> SaveBattleAsync(SaveBattleRequest request)
         {
-            // Determine result
             BattleResult result;
-            if (request.WinnerId == 0)
+            if (!request.WinnerId.HasValue)
             {
                 result = BattleResult.Draw;
             }
@@ -138,7 +115,7 @@ namespace PokeDexApi.Services
             {
                 Player1Id = request.Player1Id,
                 Player2Id = request.Player2Id,
-                WinnerId = request.WinnerId > 0 ? request.WinnerId : (int?)null,
+                WinnerId = request.WinnerId,
                 Player1TeamId = request.Player1TeamId,
                 Player2TeamId = request.Player2TeamId,
                 TotalTurns = request.TotalTurns,
@@ -152,27 +129,16 @@ namespace PokeDexApi.Services
             _context.BattleHistories.Add(battle);
             await _context.SaveChangesAsync();
 
-            // Update user ratings
             var player1Rating = await GetOrCreateUserRatingAsync(request.Player1Id);
             var player2Rating = await GetOrCreateUserRatingAsync(request.Player2Id);
 
             if (result != BattleResult.Draw)
             {
-                await UpdateUserRatingAsync(
-                    request.Player1Id,
-                    result == BattleResult.Player1Win,
-                    player2Rating.Rating
-                );
-
-                await UpdateUserRatingAsync(
-                    request.Player2Id,
-                    result == BattleResult.Player2Win,
-                    player1Rating.Rating
-                );
+                await UpdateUserRatingAsync(request.Player1Id, result == BattleResult.Player1Win, player2Rating.Rating);
+                await UpdateUserRatingAsync(request.Player2Id, result == BattleResult.Player2Win, player1Rating.Rating);
             }
             else
             {
-                // Handle draw
                 player1Rating.TotalBattles++;
                 player1Rating.Draws++;
                 player1Rating.CurrentStreak = 0;
@@ -189,23 +155,20 @@ namespace PokeDexApi.Services
             return battle;
         }
 
-        public async Task DeleteBattleAsync(int id)
+        public async Task<bool> DeleteBattleAsync(int id)
         {
             var battle = await _context.BattleHistories.FindAsync(id);
-            if (battle != null)
-            {
-                _context.BattleHistories.Remove(battle);
-                await _context.SaveChangesAsync();
-            }
+            if (battle == null) return false;
+
+            _context.BattleHistories.Remove(battle);
+            await _context.SaveChangesAsync();
+            return true;
         }
 
-        public async Task ReportBattleAsync(int battleId, int reportedById, string reason)
+        public async Task<bool> ReportBattleAsync(int battleId, int reportedById, string reason)
         {
             var battle = await _context.BattleHistories.FindAsync(battleId);
-            if (battle == null)
-            {
-                throw new Exception("Battle not found");
-            }
+            if (battle == null) throw new Exception("Battle not found");
 
             battle.IsReported = true;
             battle.ReportReason = reason;
@@ -221,13 +184,12 @@ namespace PokeDexApi.Services
 
             _context.BattleReports.Add(report);
             await _context.SaveChangesAsync();
+            return true;
         }
 
         public async Task<UserRating> GetOrCreateUserRatingAsync(int userId)
         {
-            var rating = await _context.UserRatings
-                .Include(r => r.User)
-                .FirstOrDefaultAsync(r => r.UserId == userId);
+            var rating = await _context.UserRatings.Include(r => r.User).FirstOrDefaultAsync(r => r.UserId == userId);
 
             if (rating == null)
             {
@@ -257,8 +219,7 @@ namespace PokeDexApi.Services
         {
             var rating = await GetOrCreateUserRatingAsync(userId);
 
-            // ELO rating calculation
-            const int K = 32; // K-factor
+            const int K = 32;
             double expectedScore = 1.0 / (1.0 + Math.Pow(10, (opponentRating - rating.Rating) / 400.0));
             double actualScore = won ? 1.0 : 0.0;
             int ratingChange = (int)Math.Round(K * (actualScore - expectedScore));
@@ -270,7 +231,6 @@ namespace PokeDexApi.Services
             {
                 rating.Wins++;
                 rating.CurrentStreak = rating.CurrentStreak > 0 ? rating.CurrentStreak + 1 : 1;
-
                 if (rating.CurrentStreak > rating.LongestWinStreak)
                 {
                     rating.LongestWinStreak = rating.CurrentStreak;
@@ -282,10 +242,7 @@ namespace PokeDexApi.Services
                 rating.CurrentStreak = rating.CurrentStreak < 0 ? rating.CurrentStreak - 1 : -1;
             }
 
-            if (rating.Rating > rating.Peak)
-            {
-                rating.Peak = rating.Rating;
-            }
+            if (rating.Rating > rating.Peak) rating.Peak = rating.Rating;
 
             rating.LastBattleAt = DateTime.UtcNow;
             rating.UpdatedAt = DateTime.UtcNow;
@@ -293,8 +250,7 @@ namespace PokeDexApi.Services
             await _context.SaveChangesAsync();
         }
 
-        // Battle Session Management
-        public async Task<BattleSession> CreateBattleSessionAsync(int player1Id, string player1SocketId, int teamId)
+        public async Task<BattleSession> CreateBattleSessionAsync(int player1Id, string player1SocketId, int player2Id, string player2SocketId, int player1TeamId, int player2TeamId)
         {
             var battleId = GenerateBattleId();
 
@@ -303,7 +259,10 @@ namespace PokeDexApi.Services
                 BattleId = battleId,
                 Player1Id = player1Id,
                 Player1SocketId = player1SocketId,
-                Player1TeamId = teamId,
+                Player2Id = player2Id,
+                Player2SocketId = player2SocketId,
+                Player1TeamId = player1TeamId,
+                Player2TeamId = player2TeamId,
                 Status = BattleSessionStatus.Waiting,
                 CreatedAt = DateTime.UtcNow
             };
@@ -316,8 +275,7 @@ namespace PokeDexApi.Services
 
         public async Task<BattleSession> GetBattleSessionAsync(string battleId)
         {
-            return await _context.BattleSessions
-                .FirstOrDefaultAsync(s => s.BattleId == battleId);
+            return await _context.BattleSessions.FirstOrDefaultAsync(s => s.BattleId == battleId);
         }
 
         public async Task UpdateBattleSessionAsync(BattleSession session)
@@ -329,8 +287,7 @@ namespace PokeDexApi.Services
 
         public async Task DeleteBattleSessionAsync(string battleId)
         {
-            var session = await _context.BattleSessions
-                .FirstOrDefaultAsync(s => s.BattleId == battleId);
+            var session = await _context.BattleSessions.FirstOrDefaultAsync(s => s.BattleId == battleId);
 
             if (session != null)
             {
@@ -352,21 +309,7 @@ namespace PokeDexApi.Services
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
             var random = new Random();
-            return new string(Enumerable.Repeat(chars, 6)
-                .Select(s => s[random.Next(s.Length)]).ToArray());
+            return new string(Enumerable.Repeat(chars, 6).Select(s => s[random.Next(s.Length)]).ToArray());
         }
-    }
-
-    public class SaveBattleRequest
-    {
-        public int Player1Id { get; set; }
-        public int Player2Id { get; set; }
-        public int WinnerId { get; set; }
-        public int Player1TeamId { get; set; }
-        public int Player2TeamId { get; set; }
-        public int TotalTurns { get; set; }
-        public string BattleLog { get; set; }
-        public DateTime StartedAt { get; set; }
-        public DateTime EndedAt { get; set; }
     }
 }

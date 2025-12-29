@@ -1,12 +1,12 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using PokeDexApi.Services;
+using PokedexApi.Services;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace PokeDexApi.Services
+namespace PokedexApi.Services
 {
     public class BattleCleanupService : BackgroundService
     {
@@ -15,9 +15,7 @@ namespace PokeDexApi.Services
         private readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(5);
         private readonly int _sessionExpiryMinutes = 30;
 
-        public BattleCleanupService(
-            ILogger<BattleCleanupService> logger,
-            IServiceProvider serviceProvider)
+        public BattleCleanupService(ILogger<BattleCleanupService> logger, IServiceProvider serviceProvider)
         {
             _logger = logger;
             _serviceProvider = serviceProvider;

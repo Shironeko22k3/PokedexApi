@@ -7,11 +7,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 using PokedexApi.Data;
 using PokedexApi.Helpers;
-using PokedexApi.Hubs;
 using PokedexApi.Middleware;
 using PokedexApi.Services;
-using PokeDexApi.Hubs;
-using PokeDexApi.Services;
+using PokedexApi.Hubs;
 
 namespace PokedexApi
 {

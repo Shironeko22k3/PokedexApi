@@ -1,14 +1,10 @@
-﻿using PokedexApi.Models;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace PokeDexApi.Models
+namespace PokedexApi.Models
 {
-    /// <summary>
-    /// Battle history record
-    /// </summary>
     public class BattleHistory
     {
         [Key]
@@ -75,9 +71,6 @@ namespace PokeDexApi.Models
         Forfeit
     }
 
-    /// <summary>
-    /// Battle statistics for a user
-    /// </summary>
     public class BattleStats
     {
         public int UserId { get; set; }
@@ -95,9 +88,6 @@ namespace PokeDexApi.Models
         public string Rank { get; set; }
     }
 
-    /// <summary>
-    /// Leaderboard entry
-    /// </summary>
     public class LeaderboardEntry
     {
         public int Rank { get; set; }
@@ -110,9 +100,6 @@ namespace PokeDexApi.Models
         public double WinRate { get; set; }
     }
 
-    /// <summary>
-    /// Active battle session (for real-time battles)
-    /// </summary>
     public class BattleSession
     {
         [Key]
@@ -153,9 +140,6 @@ namespace PokeDexApi.Models
         Cancelled
     }
 
-    /// <summary>
-    /// Matchmaking queue entry
-    /// </summary>
     public class MatchmakingQueue
     {
         [Key]
@@ -181,9 +165,6 @@ namespace PokeDexApi.Models
         public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// User rating/ranking system
-    /// </summary>
     public class UserRating
     {
         [Key]
@@ -196,7 +177,7 @@ namespace PokeDexApi.Models
         public virtual User User { get; set; }
 
         [Required]
-        public int Rating { get; set; } = 1000; // Starting ELO rating
+        public int Rating { get; set; } = 1000;
 
         public int Peak { get; set; } = 1000;
 
@@ -235,9 +216,6 @@ namespace PokeDexApi.Models
         }
     }
 
-    /// <summary>
-    /// Battle report (for moderation)
-    /// </summary>
     public class BattleReport
     {
         [Key]
@@ -276,5 +254,19 @@ namespace PokeDexApi.Models
         Reviewing,
         Resolved,
         Rejected
+    }
+
+    public class SaveBattleRequest
+    {
+        public int Player1Id { get; set; }
+        public int Player2Id { get; set; }
+        public int? WinnerId { get; set; }
+        public int Player1TeamId { get; set; }
+        public int Player2TeamId { get; set; }
+        public int TotalTurns { get; set; }
+        public string BattleLog { get; set; } = string.Empty;
+        public BattleResult Result { get; set; }
+        public DateTime StartedAt { get; set; }
+        public DateTime EndedAt { get; set; }
     }
 }

@@ -21,7 +21,7 @@ namespace PokedexApi.Hubs
         // In-memory storage for active battles and matchmaking
         private static readonly ConcurrentDictionary<string, BattleState> ActiveBattles = new();
         private static readonly ConcurrentQueue<MatchmakingPlayer> MatchmakingQueue = new();
-        private static readonly ConcurrentDictionary<string, string> UserConnections = new(); 
+        private static readonly ConcurrentDictionary<string, string> UserConnections = new();
 
         public BattleHub(IBattleService battleService, ITeamService teamService)
         {
@@ -133,8 +133,15 @@ namespace PokedexApi.Hubs
                     return null;
                 }
 
-                // Create battle session
-                var session = await _battleService.CreateBattleSessionAsync(userId, Context.ConnectionId, teamId);
+                // FIX #1: Updated to match the interface signature (removed player2Id and player2SocketId parameters)
+                // Create battle session with only player1 information
+                var session = await _battleService.CreateBattleSessionAsync(
+                    userId,
+                    Context.ConnectionId,
+                    0,  // player2Id - 0 indicates waiting for player 2
+                    "",  // player2SocketId - empty for now
+                    teamId,
+                    0); // player2TeamId - 0 for now
 
                 // Create battle state
                 var battleState = new BattleState
@@ -498,9 +505,12 @@ namespace PokedexApi.Hubs
             var random = new Random();
             damage *= 0.85 + random.NextDouble() * 0.15;
 
+            // FIX #2, #3, #4: Cast lambda expressions to Func<> delegates when used with dynamic types
             // STAB (Same Type Attack Bonus)
             var attackerTypes = attacker.Pokemon.Types;
-            if (attackerTypes.Any(t => t.Type.Name == move.Type?.Name))
+            // Cast the lambda to Func<dynamic, bool> to resolve CS1977 error
+            Func<dynamic, bool> typeMatchPredicate = t => t.Type.Name == move.Type?.Name;
+            if (attackerTypes.Any(typeMatchPredicate))
             {
                 damage *= 1.5;
             }
@@ -535,7 +545,9 @@ namespace PokedexApi.Hubs
 
         private int CalculateMaxHP(PokemonBuild pokemon)
         {
-            var baseStat = pokemon.Pokemon.Stats.FirstOrDefault(s => s.Stat.Name == "hp")?.BaseStat ?? 50;
+            // FIX #2: Cast lambda to Func<dynamic, bool>
+            Func<dynamic, bool> hpStatPredicate = s => s.Stat.Name == "hp";
+            var baseStat = pokemon.Pokemon.Stats.FirstOrDefault(hpStatPredicate)?.BaseStat ?? 50;
             var iv = pokemon.Ivs.Hp;
             var ev = pokemon.Evs.Hp;
             var level = pokemon.Level;
@@ -545,7 +557,10 @@ namespace PokedexApi.Hubs
 
         private int CalculateStat(string statName, PokemonBuild pokemon)
         {
-            var baseStat = pokemon.Pokemon.Stats.FirstOrDefault(s => s.Stat.Name == statName)?.BaseStat ?? 50;
+            // FIX #3: Cast lambda to Func<dynamic, bool>
+            string capturedStatName = statName; // Capture the variable to avoid closure issues
+            Func<dynamic, bool> statPredicate = s => s.Stat.Name == capturedStatName;
+            var baseStat = pokemon.Pokemon.Stats.FirstOrDefault(statPredicate)?.BaseStat ?? 50;
             var iv = GetIV(pokemon, statName);
             var ev = GetEV(pokemon, statName);
             var level = pokemon.Level;

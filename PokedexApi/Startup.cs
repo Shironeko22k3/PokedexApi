@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -28,10 +28,10 @@ namespace PokedexApi
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
 
-            // CORS
+            // CORS - PHẢI TRƯỚC Authentication
             services.AddCorsPolicy(Configuration);
 
-            // JWT Authentication
+            // JWT Authentication với xử lý OPTIONS
             services.AddJwtAuthentication(Configuration);
 
             // Services - Dependency Injection
@@ -42,6 +42,9 @@ namespace PokedexApi
 
             // Background Services
             services.AddHostedService<BattleCleanupService>();
+
+            // Health Checks
+            services.AddHealthChecks();
 
             // SignalR for real-time battles
             services.AddSignalR(options =>
@@ -55,7 +58,8 @@ namespace PokedexApi
             services.AddControllers()
                 .AddJsonOptions(options =>
                 {
-                    options.JsonSerializerOptions.PropertyNamingPolicy = null;
+                    options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+                    options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
                     options.JsonSerializerOptions.WriteIndented = true;
                     options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.Preserve;
                 });
@@ -110,20 +114,42 @@ namespace PokedexApi
                 });
             }
 
-            // Custom Middleware
+            app.Use(async (context, next) =>
+            {
+                if (context.Request.Method == "OPTIONS")
+                {
+                    context.Response.StatusCode = 200;
+                    context.Response.Headers.Add("Access-Control-Allow-Origin", "http://localhost:4200");
+                    context.Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                    context.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization");
+                    context.Response.Headers.Add("Access-Control-Allow-Credentials", "true");
+                    context.Response.Headers.Add("Access-Control-Max-Age", "86400");
+                    await context.Response.CompleteAsync();
+                    return;
+                }
+                await next();
+            });
+
+            // 2. Custom Middleware
             app.UseMiddleware<ErrorHandlerMiddleware>();
             app.UseMiddleware<RequestLoggingMiddleware>();
 
-            app.UseHttpsRedirection();
+            // 3. TRÁNH HTTPS Redirect trong development (gây lỗi CORS)
+            if (!env.IsDevelopment())
+            {
+                app.UseHttpsRedirection();
+            }
 
             app.UseRouting();
 
-            // CORS must come before Authentication/Authorization
+            // 4. CORS - PHẢI TRƯỚC Authentication
             app.UseCors(CorsConfiguration.PolicyName);
 
+            // 5. Authentication & Authorization
             app.UseAuthentication();
             app.UseAuthorization();
 
+            // 6. Endpoints
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();

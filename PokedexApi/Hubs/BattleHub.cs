@@ -21,7 +21,7 @@ namespace PokedexApi.Hubs
         // In-memory storage for active battles and matchmaking
         private static readonly ConcurrentDictionary<string, BattleState> ActiveBattles = new();
         private static readonly ConcurrentQueue<MatchmakingPlayer> MatchmakingQueue = new();
-        private static readonly ConcurrentDictionary<string, string> UserConnections = new(); // UserId -> ConnectionId
+        private static readonly ConcurrentDictionary<string, string> UserConnections = new(); 
 
         public BattleHub(IBattleService battleService, ITeamService teamService)
         {

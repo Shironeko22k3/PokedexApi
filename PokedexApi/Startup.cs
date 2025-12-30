@@ -95,10 +95,6 @@ namespace PokedexApi
                     }
                 });
             });
-
-            // Health Checks
-            services.AddHealthChecks()
-                .AddDbContextCheck<ApplicationDbContext>();
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)

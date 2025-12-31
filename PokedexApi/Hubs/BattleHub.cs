@@ -46,18 +46,13 @@ namespace PokedexApi.Hubs
             if (!string.IsNullOrEmpty(userId))
             {
                 UserConnections.TryRemove(userId, out _);
-
                 RemoveFromMatchmaking(userId);
-
                 await HandleBattleDisconnect(userId);
             }
 
             await base.OnDisconnectedAsync(exception);
         }
 
-        /// <summary>
-        /// Join matchmaking queue
-        /// </summary>
         public async Task JoinMatchmaking(int teamId)
         {
             try
@@ -74,12 +69,29 @@ namespace PokedexApi.Hubs
 
                 var rating = await _battleService.GetOrCreateUserRatingAsync(userId);
 
+                List<PokemonBuild> pokemonTeam;
+                try
+                {
+                    pokemonTeam = JsonSerializer.Deserialize<List<PokemonBuild>>(team.TeamData);
+                    if (pokemonTeam == null || pokemonTeam.Count == 0)
+                    {
+                        await Clients.Caller.SendAsync("Error", "Invalid team data");
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error deserializing team: {ex.Message}");
+                    await Clients.Caller.SendAsync("Error", "Failed to load team data");
+                    return;
+                }
+
                 var player = new MatchmakingPlayer
                 {
                     UserId = userId,
                     Username = username,
                     TeamId = teamId,
-                    Team = JsonSerializer.Deserialize<List<PokemonBuild>>(team.TeamData),
+                    Team = pokemonTeam,
                     ConnectionId = Context.ConnectionId,
                     Rating = rating.Rating,
                     JoinedAt = DateTime.UtcNow
@@ -92,13 +104,11 @@ namespace PokedexApi.Hubs
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"JoinMatchmaking error: {ex.Message}");
                 await Clients.Caller.SendAsync("Error", ex.Message);
             }
         }
 
-        /// <summary>
-        /// Leave matchmaking queue
-        /// </summary>
         public Task LeaveMatchmaking()
         {
             var userId = Context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -109,9 +119,6 @@ namespace PokedexApi.Hubs
             return Task.CompletedTask;
         }
 
-        /// <summary>
-        /// Create private battle room
-        /// </summary>
         public async Task<string> CreatePrivateBattle(int teamId)
         {
             try
@@ -127,12 +134,9 @@ namespace PokedexApi.Hubs
                 }
 
                 var session = await _battleService.CreateBattleSessionAsync(
-                    userId,
-                    Context.ConnectionId,
-                    0, 
-                    "",  
-                    teamId,
-                    0); 
+                    userId, Context.ConnectionId, 0, "", teamId, 0);
+
+                var pokemonTeam = JsonSerializer.Deserialize<List<PokemonBuild>>(team.TeamData);
 
                 var battleState = new BattleState
                 {
@@ -142,7 +146,7 @@ namespace PokedexApi.Hubs
                         UserId = userId,
                         Username = username,
                         ConnectionId = Context.ConnectionId,
-                        Team = ConvertTeamToBattlePokemon(JsonSerializer.Deserialize<List<PokemonBuild>>(team.TeamData)),
+                        Team = ConvertTeamToBattlePokemon(pokemonTeam),
                         CurrentPokemonIndex = 0
                     },
                     Player2 = null,
@@ -154,20 +158,17 @@ namespace PokedexApi.Hubs
                 };
 
                 ActiveBattles[session.BattleId] = battleState;
-
                 Console.WriteLine($"Private battle created: {session.BattleId}");
                 return session.BattleId;
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"CreatePrivateBattle error: {ex.Message}");
                 await Clients.Caller.SendAsync("Error", ex.Message);
                 return null;
             }
         }
 
-        /// <summary>
-        /// Join private battle room
-        /// </summary>
         public async Task JoinPrivateBattle(string battleId, int teamId)
         {
             try
@@ -194,12 +195,14 @@ namespace PokedexApi.Hubs
                     return;
                 }
 
+                var pokemonTeam = JsonSerializer.Deserialize<List<PokemonBuild>>(team.TeamData);
+
                 battle.Player2 = new BattlePlayer
                 {
                     UserId = userId,
                     Username = username,
                     ConnectionId = Context.ConnectionId,
-                    Team = ConvertTeamToBattlePokemon(JsonSerializer.Deserialize<List<PokemonBuild>>(team.TeamData)),
+                    Team = ConvertTeamToBattlePokemon(pokemonTeam),
                     CurrentPokemonIndex = 0
                 };
 
@@ -218,13 +221,11 @@ namespace PokedexApi.Hubs
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"JoinPrivateBattle error: {ex.Message}");
                 await Clients.Caller.SendAsync("Error", ex.Message);
             }
         }
 
-        /// <summary>
-        /// Perform battle action (move, switch, forfeit)
-        /// </summary>
         public async Task PerformAction(string battleId, BattleAction action)
         {
             try
@@ -294,7 +295,6 @@ namespace PokedexApi.Hubs
                     });
 
                     await SaveBattleResult(battle);
-
                     await Clients.Client(battle.Player1.ConnectionId).SendAsync("BattleFinished", battle);
                     await Clients.Client(battle.Player2.ConnectionId).SendAsync("BattleFinished", battle);
 
@@ -312,6 +312,7 @@ namespace PokedexApi.Hubs
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"PerformAction error: {ex.Message}");
                 await Clients.Caller.SendAsync("Error", ex.Message);
             }
         }
@@ -320,53 +321,60 @@ namespace PokedexApi.Hubs
         {
             if (MatchmakingQueue.Count < 2) return;
 
-            var players = new List<MatchmakingPlayer>();
-
             if (MatchmakingQueue.TryDequeue(out var player1) &&
                 MatchmakingQueue.TryDequeue(out var player2))
             {
-                var battleId = GenerateBattleId();
-
-                var battleState = new BattleState
+                try
                 {
-                    BattleId = battleId,
-                    Player1 = new BattlePlayer
+                    var battleId = GenerateBattleId();
+
+                    var battleState = new BattleState
                     {
-                        UserId = player1.UserId,
-                        Username = player1.Username,
-                        ConnectionId = player1.ConnectionId,
-                        Team = ConvertTeamToBattlePokemon(player1.Team),
-                        CurrentPokemonIndex = 0
-                    },
-                    Player2 = new BattlePlayer
-                    {
-                        UserId = player2.UserId,
-                        Username = player2.Username,
-                        ConnectionId = player2.ConnectionId,
-                        Team = ConvertTeamToBattlePokemon(player2.Team),
-                        CurrentPokemonIndex = 0
-                    },
-                    CurrentTurn = BattleTurn.Player1,
-                    TurnNumber = 1,
-                    BattleLog = new List<BattleLogEntry>
-                    {
-                        new BattleLogEntry
+                        BattleId = battleId,
+                        Player1 = new BattlePlayer
                         {
-                            Timestamp = DateTime.UtcNow,
-                            Message = $"Battle started between {player1.Username} and {player2.Username}!",
-                            Type = LogType.Turn
-                        }
-                    },
-                    Status = BattleStatus.Active,
-                    StartedAt = DateTime.UtcNow
-                };
+                            UserId = player1.UserId,
+                            Username = player1.Username,
+                            ConnectionId = player1.ConnectionId,
+                            Team = ConvertTeamToBattlePokemon(player1.Team),
+                            CurrentPokemonIndex = 0
+                        },
+                        Player2 = new BattlePlayer
+                        {
+                            UserId = player2.UserId,
+                            Username = player2.Username,
+                            ConnectionId = player2.ConnectionId,
+                            Team = ConvertTeamToBattlePokemon(player2.Team),
+                            CurrentPokemonIndex = 0
+                        },
+                        CurrentTurn = BattleTurn.Player1,
+                        TurnNumber = 1,
+                        BattleLog = new List<BattleLogEntry>
+                        {
+                            new BattleLogEntry
+                            {
+                                Timestamp = DateTime.UtcNow,
+                                Message = $"Battle started between {player1.Username} and {player2.Username}!",
+                                Type = LogType.Turn
+                            }
+                        },
+                        Status = BattleStatus.Active,
+                        StartedAt = DateTime.UtcNow
+                    };
 
-                ActiveBattles[battleId] = battleState;
+                    ActiveBattles[battleId] = battleState;
 
-                await Clients.Client(player1.ConnectionId).SendAsync("BattleJoined", battleState);
-                await Clients.Client(player2.ConnectionId).SendAsync("BattleJoined", battleState);
+                    await Clients.Client(player1.ConnectionId).SendAsync("BattleJoined", battleState);
+                    await Clients.Client(player2.ConnectionId).SendAsync("BattleJoined", battleState);
 
-                Console.WriteLine($"Match created: {player1.Username} vs {player2.Username}");
+                    Console.WriteLine($"Match created: {player1.Username} vs {player2.Username}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"TryMatchPlayers error: {ex.Message}");
+                    MatchmakingQueue.Enqueue(player1);
+                    MatchmakingQueue.Enqueue(player2);
+                }
             }
         }
 
@@ -412,12 +420,24 @@ namespace PokedexApi.Hubs
         {
             var attackerPokemon = attacker.Team[attacker.CurrentPokemonIndex];
             var defenderPokemon = defender.Team[defender.CurrentPokemonIndex];
+
+            if (moveIndex >= attackerPokemon.Moves.Count)
+            {
+                battle.BattleLog.Add(new BattleLogEntry
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Message = "Invalid move!",
+                    Type = LogType.Info
+                });
+                return;
+            }
+
             var move = attackerPokemon.Moves[moveIndex];
 
             battle.BattleLog.Add(new BattleLogEntry
             {
                 Timestamp = DateTime.UtcNow,
-                Message = $"{attackerPokemon.Nickname ?? attackerPokemon.Pokemon.Name} used {FormatName(move.Name)}!",
+                Message = $"{attackerPokemon.Nickname ?? attackerPokemon.PokemonName} used {FormatName(move.Name)}!",
                 Type = LogType.Info
             });
 
@@ -430,7 +450,7 @@ namespace PokedexApi.Hubs
                 battle.BattleLog.Add(new BattleLogEntry
                 {
                     Timestamp = DateTime.UtcNow,
-                    Message = $"Dealt {damage} damage to {defenderPokemon.Nickname ?? defenderPokemon.Pokemon.Name}!",
+                    Message = $"Dealt {damage} damage to {defenderPokemon.Nickname ?? defenderPokemon.PokemonName}!",
                     Type = LogType.Damage
                 });
 
@@ -440,7 +460,7 @@ namespace PokedexApi.Hubs
                     battle.BattleLog.Add(new BattleLogEntry
                     {
                         Timestamp = DateTime.UtcNow,
-                        Message = $"{defenderPokemon.Nickname ?? defenderPokemon.Pokemon.Name} fainted!",
+                        Message = $"{defenderPokemon.Nickname ?? defenderPokemon.PokemonName} fainted!",
                         Type = LogType.Info
                     });
                 }
@@ -449,6 +469,17 @@ namespace PokedexApi.Hubs
 
         private void ProcessSwitchAction(BattleState battle, BattlePlayer player, int switchToIndex)
         {
+            if (switchToIndex >= player.Team.Count || switchToIndex < 0)
+            {
+                battle.BattleLog.Add(new BattleLogEntry
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Message = "Invalid switch!",
+                    Type = LogType.Info
+                });
+                return;
+            }
+
             var oldPokemon = player.Team[player.CurrentPokemonIndex];
             player.CurrentPokemonIndex = switchToIndex;
             var newPokemon = player.Team[switchToIndex];
@@ -456,17 +487,17 @@ namespace PokedexApi.Hubs
             battle.BattleLog.Add(new BattleLogEntry
             {
                 Timestamp = DateTime.UtcNow,
-                Message = $"{player.Username} switched to {newPokemon.Nickname ?? newPokemon.Pokemon.Name}!",
+                Message = $"{player.Username} switched to {newPokemon.Nickname ?? newPokemon.PokemonName}!",
                 Type = LogType.Switch
             });
         }
 
-        private int CalculateDamage(BattlePokemon attacker, BattlePokemon defender, dynamic move)
+        private int CalculateDamage(BattlePokemon attacker, BattlePokemon defender, MoveData move)
         {
             var power = move.Power ?? 50;
             var level = attacker.Level;
 
-            var isPhysical = move.DamageClass?.Name == "physical";
+            var isPhysical = move.DamageClass == "physical";
             var attackStat = isPhysical ? attacker.Stats.Attack : attacker.Stats.SpecialAttack;
             var defenseStat = isPhysical ? defender.Stats.Defense : defender.Stats.SpecialDefense;
 
@@ -475,20 +506,7 @@ namespace PokedexApi.Hubs
             var random = new Random();
             damage *= 0.85 + random.NextDouble() * 0.15;
 
-            var attackerTypes = attacker.Pokemon.Types;
-            var moveTypeName = move.Type?.Name;
-
-            bool hasStab = false;
-            foreach (var type in attackerTypes)
-            {
-                if (type.Type.Name == moveTypeName)
-                {
-                    hasStab = true;
-                    break;
-                }
-            }
-
-            if (hasStab)
+            if (attacker.Types != null && attacker.Types.Contains(move.Type))
             {
                 damage *= 1.5;
             }
@@ -500,9 +518,10 @@ namespace PokedexApi.Hubs
         {
             return team.Select(p => new BattlePokemon
             {
-                Pokemon = p.Pokemon,
+                PokemonName = ExtractPokemonName(p.Pokemon),
                 Nickname = p.Nickname,
                 Level = p.Level,
+                Types = ExtractTypes(p.Pokemon),
                 CurrentHp = CalculateMaxHP(p),
                 MaxHp = CalculateMaxHP(p),
                 Status = PokemonStatus.Normal,
@@ -515,26 +534,109 @@ namespace PokedexApi.Hubs
                     SpecialDefense = CalculateStat("special-defense", p),
                     Speed = CalculateStat("speed", p)
                 },
-                Moves = p.Moves,
-                Ability = p.Ability,
-                Item = p.Item
+                Moves = ConvertMoves(p.Moves),
+                Ability = p.Ability ?? "Unknown",
+                Item = ExtractItemName(p.Item)
             }).ToList();
+        }
+
+        private string ExtractPokemonName(JsonElement? pokemon)
+        {
+            if (pokemon == null) return "Unknown";
+
+            try
+            {
+                if (pokemon.Value.TryGetProperty("name", out var name))
+                {
+                    return name.GetString() ?? "Unknown";
+                }
+            }
+            catch { }
+
+            return "Unknown";
+        }
+
+        private string ExtractItemName(JsonElement? item)
+        {
+            if (item == null) return null;
+
+            try
+            {
+                if (item.Value.TryGetProperty("name", out var name))
+                {
+                    return name.GetString();
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private List<string> ExtractTypes(JsonElement? pokemon)
+        {
+            var types = new List<string>();
+            if (pokemon == null) return types;
+
+            try
+            {
+                if (pokemon.Value.TryGetProperty("types", out var typesArray))
+                {
+                    foreach (var typeElement in typesArray.EnumerateArray())
+                    {
+                        if (typeElement.TryGetProperty("type", out var typeObj) &&
+                            typeObj.TryGetProperty("name", out var typeName))
+                        {
+                            types.Add(typeName.GetString());
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return types;
+        }
+
+        private List<MoveData> ConvertMoves(List<JsonElement> moves)
+        {
+            var moveList = new List<MoveData>();
+
+            foreach (var move in moves ?? new List<JsonElement>())
+            {
+                try
+                {
+                    var moveData = new MoveData
+                    {
+                        Name = move.TryGetProperty("name", out var name) ? name.GetString() : "tackle",
+                        Power = move.TryGetProperty("power", out var power) ? power.GetInt32() : 50,
+                        Type = move.TryGetProperty("type", out var typeObj) &&
+                               typeObj.TryGetProperty("name", out var typeName)
+                               ? typeName.GetString() : "normal",
+                        DamageClass = move.TryGetProperty("damage_class", out var damageObj) &&
+                                     damageObj.TryGetProperty("name", out var damageClass)
+                                     ? damageClass.GetString() : "physical"
+                    };
+                    moveList.Add(moveData);
+                }
+                catch
+                {
+                    moveList.Add(new MoveData
+                    {
+                        Name = "tackle",
+                        Power = 40,
+                        Type = "normal",
+                        DamageClass = "physical"
+                    });
+                }
+            }
+
+            return moveList;
         }
 
         private int CalculateMaxHP(PokemonBuild pokemon)
         {
-            int baseStat = 50;
-            foreach (var stat in pokemon.Pokemon.Stats)
-            {
-                if (stat.Stat.Name == "hp")
-                {
-                    baseStat = stat.BaseStat;
-                    break;
-                }
-            }
-
-            var iv = pokemon.Ivs.Hp;
-            var ev = pokemon.Evs.Hp;
+            int baseStat = GetBaseStat(pokemon.Pokemon, "hp");
+            var iv = pokemon.Ivs?.Hp ?? 31;
+            var ev = pokemon.Evs?.Hp ?? 0;
             var level = pokemon.Level;
 
             return (int)Math.Floor(((2.0 * baseStat + iv + Math.Floor(ev / 4.0)) * level) / 100.0) + level + 10;
@@ -542,16 +644,7 @@ namespace PokedexApi.Hubs
 
         private int CalculateStat(string statName, PokemonBuild pokemon)
         {
-            int baseStat = 50;
-            foreach (var stat in pokemon.Pokemon.Stats)
-            {
-                if (stat.Stat.Name == statName)
-                {
-                    baseStat = stat.BaseStat;
-                    break;
-                }
-            }
-
+            int baseStat = GetBaseStat(pokemon.Pokemon, statName);
             var iv = GetIV(pokemon, statName);
             var ev = GetEV(pokemon, statName);
             var level = pokemon.Level;
@@ -559,8 +652,35 @@ namespace PokedexApi.Hubs
             return (int)Math.Floor(((2.0 * baseStat + iv + Math.Floor(ev / 4.0)) * level) / 100.0) + 5;
         }
 
+        private int GetBaseStat(JsonElement? pokemon, string statName)
+        {
+            if (pokemon == null) return 50;
+
+            try
+            {
+                if (pokemon.Value.TryGetProperty("stats", out var stats))
+                {
+                    foreach (var stat in stats.EnumerateArray())
+                    {
+                        if (stat.TryGetProperty("stat", out var statObj) &&
+                            statObj.TryGetProperty("name", out var name) &&
+                            name.GetString() == statName &&
+                            stat.TryGetProperty("base_stat", out var baseStat))
+                        {
+                            return baseStat.GetInt32();
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return 50;
+        }
+
         private int GetIV(PokemonBuild pokemon, string statName)
         {
+            if (pokemon.Ivs == null) return 31;
+
             return statName switch
             {
                 "hp" => pokemon.Ivs.Hp,
@@ -575,6 +695,8 @@ namespace PokedexApi.Hubs
 
         private int GetEV(PokemonBuild pokemon, string statName)
         {
+            if (pokemon.Evs == null) return 0;
+
             return statName switch
             {
                 "hp" => pokemon.Evs.Hp,
@@ -590,7 +712,7 @@ namespace PokedexApi.Hubs
         private async Task SaveBattleResult(BattleState battle)
         {
             var winnerId = battle.Winner == BattleTurn.Player1 ? battle.Player1.UserId :
-                          battle.Winner == BattleTurn.Player2 ? battle.Player2.UserId : 0;
+                          battle.Winner == BattleTurn.Player2 ? battle.Player2.UserId : (int?)null;
 
             var request = new SaveBattleRequest
             {
@@ -618,10 +740,12 @@ namespace PokedexApi.Hubs
 
         private string FormatName(string name)
         {
+            if (string.IsNullOrEmpty(name)) return "Unknown";
             return string.Join(" ", name.Split('-')
                 .Select(word => char.ToUpper(word[0]) + word.Substring(1)));
         }
     }
+
     public class MatchmakingPlayer
     {
         public int UserId { get; set; }
@@ -658,16 +782,25 @@ namespace PokedexApi.Hubs
 
     public class BattlePokemon
     {
-        public dynamic Pokemon { get; set; }
+        public string PokemonName { get; set; }
         public string Nickname { get; set; }
         public int Level { get; set; }
+        public List<string> Types { get; set; }
         public int CurrentHp { get; set; }
         public int MaxHp { get; set; }
         public PokemonStatus Status { get; set; }
         public BattlePokemonStats Stats { get; set; }
-        public List<dynamic> Moves { get; set; }
+        public List<MoveData> Moves { get; set; }
         public string Ability { get; set; }
-        public dynamic Item { get; set; }
+        public string Item { get; set; }
+    }
+
+    public class MoveData
+    {
+        public string Name { get; set; }
+        public int? Power { get; set; }
+        public string Type { get; set; }
+        public string DamageClass { get; set; }
     }
 
     public class BattlePokemonStats
@@ -739,13 +872,13 @@ namespace PokedexApi.Hubs
 
     public class PokemonBuild
     {
-        public dynamic Pokemon { get; set; }
+        public JsonElement? Pokemon { get; set; }
         public string Nickname { get; set; }
         public int Level { get; set; }
         public string Nature { get; set; }
         public string Ability { get; set; }
-        public dynamic Item { get; set; }
-        public List<dynamic> Moves { get; set; }
+        public JsonElement? Item { get; set; }
+        public List<JsonElement> Moves { get; set; }
         public PokemonEVs Evs { get; set; }
         public PokemonIVs Ivs { get; set; }
     }

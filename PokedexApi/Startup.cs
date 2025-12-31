@@ -24,37 +24,29 @@ namespace PokedexApi
 
         public void ConfigureServices(IServiceCollection services)
         {
-            // Database
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
 
-            // CORS - PHẢI TRƯỚC Authentication
             services.AddCorsPolicy(Configuration);
 
-            // JWT Authentication với xử lý OPTIONS
             services.AddJwtAuthentication(Configuration);
 
-            // Services - Dependency Injection
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<ITeamService, TeamService>();
             services.AddScoped<IEmailService, EmailService>();
             services.AddScoped<IBattleService, BattleService>();
 
-            // Background Services
             services.AddHostedService<BattleCleanupService>();
 
-            // Health Checks
             services.AddHealthChecks();
 
-            // SignalR for real-time battles
             services.AddSignalR(options =>
             {
                 options.EnableDetailedErrors = true;
-                options.MaximumReceiveMessageSize = 102400; // 100 KB
+                options.MaximumReceiveMessageSize = 102400;
                 options.StreamBufferCapacity = 10;
             });
 
-            // Controllers
             services.AddControllers()
                 .AddJsonOptions(options =>
                 {
@@ -64,7 +56,6 @@ namespace PokedexApi
                     options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.Preserve;
                 });
 
-            // Swagger
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new OpenApiInfo
@@ -74,10 +65,9 @@ namespace PokedexApi
                     Description = "Pokemon Team Builder & Battle System API"
                 });
 
-                // Add JWT Authentication to Swagger
                 c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
-                    Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token.",
+                    Description = "JWT Authorization header using the Bearer scheme.",
                     Name = "Authorization",
                     In = ParameterLocation.Header,
                     Type = SecuritySchemeType.ApiKey,
@@ -110,31 +100,13 @@ namespace PokedexApi
                 app.UseSwaggerUI(c =>
                 {
                     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Pokedex API v1");
-                    c.RoutePrefix = string.Empty; // Swagger at root
+                    c.RoutePrefix = string.Empty;
                 });
             }
 
-            app.Use(async (context, next) =>
-            {
-                if (context.Request.Method == "OPTIONS")
-                {
-                    context.Response.StatusCode = 200;
-                    context.Response.Headers.Add("Access-Control-Allow-Origin", "http://localhost:4200");
-                    context.Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-                    context.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization");
-                    context.Response.Headers.Add("Access-Control-Allow-Credentials", "true");
-                    context.Response.Headers.Add("Access-Control-Max-Age", "86400");
-                    await context.Response.CompleteAsync();
-                    return;
-                }
-                await next();
-            });
-
-            // 2. Custom Middleware
             app.UseMiddleware<ErrorHandlerMiddleware>();
             app.UseMiddleware<RequestLoggingMiddleware>();
 
-            // 3. TRÁNH HTTPS Redirect trong development (gây lỗi CORS)
             if (!env.IsDevelopment())
             {
                 app.UseHttpsRedirection();
@@ -142,22 +114,15 @@ namespace PokedexApi
 
             app.UseRouting();
 
-            // 4. CORS - PHẢI TRƯỚC Authentication
             app.UseCors(CorsConfiguration.PolicyName);
 
-            // 5. Authentication & Authorization
             app.UseAuthentication();
             app.UseAuthorization();
 
-            // 6. Endpoints
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
-
-                // SignalR Hub for real-time battles
                 endpoints.MapHub<BattleHub>("/hubs/battle");
-
-                // Health check endpoint
                 endpoints.MapHealthChecks("/health");
             });
         }

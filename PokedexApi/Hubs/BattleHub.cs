@@ -18,7 +18,6 @@ namespace PokedexApi.Hubs
         private readonly IBattleService _battleService;
         private readonly ITeamService _teamService;
 
-        // In-memory storage for active battles and matchmaking
         private static readonly ConcurrentDictionary<string, BattleState> ActiveBattles = new();
         private static readonly ConcurrentQueue<MatchmakingPlayer> MatchmakingQueue = new();
         private static readonly ConcurrentDictionary<string, string> UserConnections = new();
@@ -48,10 +47,8 @@ namespace PokedexApi.Hubs
             {
                 UserConnections.TryRemove(userId, out _);
 
-                // Remove from matchmaking queue
                 RemoveFromMatchmaking(userId);
 
-                // Handle active battle disconnect
                 await HandleBattleDisconnect(userId);
             }
 
@@ -68,7 +65,6 @@ namespace PokedexApi.Hubs
                 var userId = int.Parse(Context.User.FindFirst(ClaimTypes.NameIdentifier).Value);
                 var username = Context.User.FindFirst(ClaimTypes.Name)?.Value ?? "Player";
 
-                // Load team
                 var team = await _teamService.GetTeamByIdAsync(teamId);
                 if (team == null)
                 {
@@ -76,7 +72,6 @@ namespace PokedexApi.Hubs
                     return;
                 }
 
-                // Get user rating for matchmaking
                 var rating = await _battleService.GetOrCreateUserRatingAsync(userId);
 
                 var player = new MatchmakingPlayer
@@ -93,7 +88,6 @@ namespace PokedexApi.Hubs
                 MatchmakingQueue.Enqueue(player);
                 Console.WriteLine($"Player {username} joined matchmaking queue");
 
-                // Try to match players
                 await TryMatchPlayers();
             }
             catch (Exception ex)
@@ -125,7 +119,6 @@ namespace PokedexApi.Hubs
                 var userId = int.Parse(Context.User.FindFirst(ClaimTypes.NameIdentifier).Value);
                 var username = Context.User.FindFirst(ClaimTypes.Name)?.Value ?? "Player";
 
-                // Load team
                 var team = await _teamService.GetTeamByIdAsync(teamId);
                 if (team == null)
                 {
@@ -133,17 +126,14 @@ namespace PokedexApi.Hubs
                     return null;
                 }
 
-                // FIX #1: Updated to match the interface signature (removed player2Id and player2SocketId parameters)
-                // Create battle session with only player1 information
                 var session = await _battleService.CreateBattleSessionAsync(
                     userId,
                     Context.ConnectionId,
-                    0,  // player2Id - 0 indicates waiting for player 2
-                    "",  // player2SocketId - empty for now
+                    0, 
+                    "",  
                     teamId,
-                    0); // player2TeamId - 0 for now
+                    0); 
 
-                // Create battle state
                 var battleState = new BattleState
                 {
                     BattleId = session.BattleId,
@@ -197,7 +187,6 @@ namespace PokedexApi.Hubs
                 var userId = int.Parse(Context.User.FindFirst(ClaimTypes.NameIdentifier).Value);
                 var username = Context.User.FindFirst(ClaimTypes.Name)?.Value ?? "Player";
 
-                // Load team
                 var team = await _teamService.GetTeamByIdAsync(teamId);
                 if (team == null)
                 {
@@ -205,7 +194,6 @@ namespace PokedexApi.Hubs
                     return;
                 }
 
-                // Add player 2
                 battle.Player2 = new BattlePlayer
                 {
                     UserId = userId,
@@ -223,7 +211,6 @@ namespace PokedexApi.Hubs
                     Type = LogType.Turn
                 });
 
-                // Notify both players
                 await Clients.Client(battle.Player1.ConnectionId).SendAsync("BattleJoined", battle);
                 await Clients.Client(battle.Player2.ConnectionId).SendAsync("BattleJoined", battle);
 
@@ -256,7 +243,6 @@ namespace PokedexApi.Hubs
 
                 var userId = int.Parse(Context.User.FindFirst(ClaimTypes.NameIdentifier).Value);
 
-                // Validate turn
                 var isPlayer1 = battle.Player1.UserId == userId;
                 if ((isPlayer1 && battle.CurrentTurn != BattleTurn.Player1) ||
                     (!isPlayer1 && battle.CurrentTurn != BattleTurn.Player2))
@@ -268,7 +254,6 @@ namespace PokedexApi.Hubs
                 var currentPlayer = isPlayer1 ? battle.Player1 : battle.Player2;
                 var opponent = isPlayer1 ? battle.Player2 : battle.Player1;
 
-                // Process action
                 switch (action.Type)
                 {
                     case ActionType.Move:
@@ -289,7 +274,6 @@ namespace PokedexApi.Hubs
                         break;
                 }
 
-                // Check for battle end
                 var player1Alive = battle.Player1.Team.Any(p => p.Status != PokemonStatus.Fainted);
                 var player2Alive = battle.Player2.Team.Any(p => p.Status != PokemonStatus.Fainted);
 
@@ -309,24 +293,19 @@ namespace PokedexApi.Hubs
                         Type = LogType.Win
                     });
 
-                    // Save battle to database
                     await SaveBattleResult(battle);
 
-                    // Notify both players
                     await Clients.Client(battle.Player1.ConnectionId).SendAsync("BattleFinished", battle);
                     await Clients.Client(battle.Player2.ConnectionId).SendAsync("BattleFinished", battle);
 
-                    // Remove from active battles
                     ActiveBattles.TryRemove(battleId, out _);
                     await _battleService.DeleteBattleSessionAsync(battleId);
                 }
                 else
                 {
-                    // Switch turn
                     battle.CurrentTurn = battle.CurrentTurn == BattleTurn.Player1 ? BattleTurn.Player2 : BattleTurn.Player1;
                     battle.TurnNumber++;
 
-                    // Notify both players
                     await Clients.Client(battle.Player1.ConnectionId).SendAsync("BattleUpdated", battle);
                     await Clients.Client(battle.Player2.ConnectionId).SendAsync("BattleUpdated", battle);
                 }
@@ -337,19 +316,15 @@ namespace PokedexApi.Hubs
             }
         }
 
-        // Helper Methods
-
         private async Task TryMatchPlayers()
         {
             if (MatchmakingQueue.Count < 2) return;
 
             var players = new List<MatchmakingPlayer>();
 
-            // Get two players from queue
             if (MatchmakingQueue.TryDequeue(out var player1) &&
                 MatchmakingQueue.TryDequeue(out var player2))
             {
-                // Create battle
                 var battleId = GenerateBattleId();
 
                 var battleState = new BattleState
@@ -388,7 +363,6 @@ namespace PokedexApi.Hubs
 
                 ActiveBattles[battleId] = battleState;
 
-                // Notify both players
                 await Clients.Client(player1.ConnectionId).SendAsync("BattleJoined", battleState);
                 await Clients.Client(player2.ConnectionId).SendAsync("BattleJoined", battleState);
 
@@ -398,8 +372,6 @@ namespace PokedexApi.Hubs
 
         private void RemoveFromMatchmaking(string userId)
         {
-            // Note: This is inefficient with ConcurrentQueue
-            // In production, use a better data structure
             var tempQueue = new ConcurrentQueue<MatchmakingPlayer>();
             while (MatchmakingQueue.TryDequeue(out var player))
             {
@@ -491,7 +463,6 @@ namespace PokedexApi.Hubs
 
         private int CalculateDamage(BattlePokemon attacker, BattlePokemon defender, dynamic move)
         {
-            // Simplified damage calculation
             var power = move.Power ?? 50;
             var level = attacker.Level;
 
@@ -501,16 +472,23 @@ namespace PokedexApi.Hubs
 
             var damage = (((2.0 * level / 5.0 + 2.0) * power * (attackStat / (double)defenseStat)) / 50.0) + 2.0;
 
-            // Random factor
             var random = new Random();
             damage *= 0.85 + random.NextDouble() * 0.15;
 
-            // FIX #2, #3, #4: Cast lambda expressions to Func<> delegates when used with dynamic types
-            // STAB (Same Type Attack Bonus)
             var attackerTypes = attacker.Pokemon.Types;
-            // Cast the lambda to Func<dynamic, bool> to resolve CS1977 error
-            Func<dynamic, bool> typeMatchPredicate = t => t.Type.Name == move.Type?.Name;
-            if (attackerTypes.Any(typeMatchPredicate))
+            var moveTypeName = move.Type?.Name;
+
+            bool hasStab = false;
+            foreach (var type in attackerTypes)
+            {
+                if (type.Type.Name == moveTypeName)
+                {
+                    hasStab = true;
+                    break;
+                }
+            }
+
+            if (hasStab)
             {
                 damage *= 1.5;
             }
@@ -545,9 +523,16 @@ namespace PokedexApi.Hubs
 
         private int CalculateMaxHP(PokemonBuild pokemon)
         {
-            // FIX #2: Cast lambda to Func<dynamic, bool>
-            Func<dynamic, bool> hpStatPredicate = s => s.Stat.Name == "hp";
-            var baseStat = pokemon.Pokemon.Stats.FirstOrDefault(hpStatPredicate)?.BaseStat ?? 50;
+            int baseStat = 50;
+            foreach (var stat in pokemon.Pokemon.Stats)
+            {
+                if (stat.Stat.Name == "hp")
+                {
+                    baseStat = stat.BaseStat;
+                    break;
+                }
+            }
+
             var iv = pokemon.Ivs.Hp;
             var ev = pokemon.Evs.Hp;
             var level = pokemon.Level;
@@ -557,10 +542,16 @@ namespace PokedexApi.Hubs
 
         private int CalculateStat(string statName, PokemonBuild pokemon)
         {
-            // FIX #3: Cast lambda to Func<dynamic, bool>
-            string capturedStatName = statName; // Capture the variable to avoid closure issues
-            Func<dynamic, bool> statPredicate = s => s.Stat.Name == capturedStatName;
-            var baseStat = pokemon.Pokemon.Stats.FirstOrDefault(statPredicate)?.BaseStat ?? 50;
+            int baseStat = 50;
+            foreach (var stat in pokemon.Pokemon.Stats)
+            {
+                if (stat.Stat.Name == statName)
+                {
+                    baseStat = stat.BaseStat;
+                    break;
+                }
+            }
+
             var iv = GetIV(pokemon, statName);
             var ev = GetEV(pokemon, statName);
             var level = pokemon.Level;
@@ -606,7 +597,7 @@ namespace PokedexApi.Hubs
                 Player1Id = battle.Player1.UserId,
                 Player2Id = battle.Player2.UserId,
                 WinnerId = winnerId,
-                Player1TeamId = 0, // TODO: Get team IDs
+                Player1TeamId = 0,
                 Player2TeamId = 0,
                 TotalTurns = battle.TurnNumber,
                 BattleLog = JsonSerializer.Serialize(battle.BattleLog),
@@ -631,8 +622,6 @@ namespace PokedexApi.Hubs
                 .Select(word => char.ToUpper(word[0]) + word.Substring(1)));
         }
     }
-
-    // Supporting classes
     public class MatchmakingPlayer
     {
         public int UserId { get; set; }

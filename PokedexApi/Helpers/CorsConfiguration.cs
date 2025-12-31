@@ -21,10 +21,11 @@ namespace PokedexApi.Helpers
                            .AllowAnyMethod()
                            .AllowAnyHeader()
                            .AllowCredentials()
-                           .SetPreflightMaxAge(TimeSpan.FromHours(24)); // Cache preflight cho 24 giờ
+                           .SetPreflightMaxAge(TimeSpan.FromHours(24))
+                           .WithExposedHeaders("Content-Disposition", "Content-Length")
+                           .SetIsOriginAllowedToAllowWildcardSubdomains();
                 });
 
-                // Thêm policy mặc định cho OPTIONS requests
                 options.AddDefaultPolicy(builder =>
                 {
                     builder.WithOrigins(allowedOrigins)

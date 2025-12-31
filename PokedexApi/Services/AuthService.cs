@@ -32,7 +32,6 @@ namespace PokedexApi.Services
 
         public async Task<AuthResponseDto> Register(RegisterDto registerDto)
         {
-            // Check if user exists
             if (await _context.Users.AnyAsync(u => u.Email == registerDto.Email))
             {
                 throw new Exception("Email already registered");
@@ -43,7 +42,6 @@ namespace PokedexApi.Services
                 throw new Exception("Username already taken");
             }
 
-            // Create user
             var user = new User
             {
                 Username = registerDto.Username,
@@ -56,10 +54,8 @@ namespace PokedexApi.Services
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
-            // Send verification email
             await _emailService.SendVerificationEmail(user.Email, user.EmailVerificationToken);
 
-            // Generate tokens
             var token = GenerateJwtToken(user);
             var refreshToken = GenerateRefreshToken();
 
@@ -192,7 +188,6 @@ namespace PokedexApi.Services
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
             if (user == null)
             {
-                // Don't reveal if user exists
                 return true;
             }
 
@@ -258,7 +253,7 @@ namespace PokedexApi.Services
                     throw new Exception("Email already registered");
                 }
                 user.Email = updateDto.Email;
-                user.EmailVerified = false; // Require re-verification
+                user.EmailVerified = false;
             }
 
             user.UpdatedAt = DateTime.UtcNow;

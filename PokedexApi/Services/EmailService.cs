@@ -20,7 +20,6 @@ namespace PokedexApi.Services
             var verificationUrl = $"{_configuration["AppUrl"]}/verify-email?token={token}";
             var message = $"Please verify your email by clicking: {verificationUrl}";
 
-            // TODO: Implement actual email sending (using SendGrid, MailKit, etc.)
             _logger.LogInformation($"Verification email would be sent to {toEmail}: {message}");
 
             await Task.CompletedTask;
@@ -31,7 +30,6 @@ namespace PokedexApi.Services
             var resetUrl = $"{_configuration["AppUrl"]}/reset-password?token={token}";
             var message = $"Reset your password by clicking: {resetUrl}";
 
-            // TODO: Implement actual email sending
             _logger.LogInformation($"Password reset email would be sent to {toEmail}: {message}");
 
             await Task.CompletedTask;

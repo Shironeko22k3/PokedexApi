@@ -13,7 +13,7 @@ namespace PokedexApi.Models
         public string TeamName { get; set; } = string.Empty;
 
         [Required]
-        public string TeamData { get; set; } = string.Empty; // JSON string
+        public string TeamData { get; set; } = string.Empty; 
 
         public int UserId { get; set; }
 
